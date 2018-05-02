@@ -1,4 +1,11 @@
 ---
+- name: Install required packages
+  apt: name={{item}} state=present
+  with_items:
+    - git
+    - nginx
+    - cron
+
 - name: Download acme-tiny
   git: >
     repo=https://github.com/diafygi/acme-tiny.git
@@ -54,9 +61,6 @@
   when: letsencrypt_fqdn | length > 1
 
 
-- name: Install nginx packages
-  apt: name=nginx state=present
-
 - name: Remove default nginx page
   file: dest=/etc/nginx/sites-enabled/default state=absent
 
@@ -98,7 +102,8 @@
 
 - name: Request certificate
   shell: "/opt/bin/acme_renew"
-  creates: "{{key_dir}}/{{letsencrypt_fqdn[0]}}.pem"
+  args:
+    creates: "{{key_dir}}/{{letsencrypt_fqdn[0]}}.pem"
 
 - name: Add cronjob every month
   cron:
