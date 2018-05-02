@@ -1,0 +1,107 @@
+---
+- name: Download acme-tiny
+  git: >
+    repo=https://github.com/diafygi/acme-tiny.git
+    dest={{acme_tiny_path}}
+    version={{acme_tiny_sha}}
+
+- name: Create letsencrypt user
+  user: name={{acme_user}} group={{acme_group}}
+
+- name: Create key directory
+  file: >
+    path={{key_dir}}
+    state=directory
+    mode=0750
+    owner={{acme_user}}
+
+- name: Download Let's Encrypt intermediate cert
+  get_url:
+    url: https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem
+    dest: "{{key_dir}}/intermediate.pem"
+
+- name: Create a Let's Encrypt account private key
+  shell: "openssl genrsa 4096 > account.key"
+  args:
+    chdir: "{{key_dir}}"
+    creates: account.key
+
+- name: Create a Let's Encrypt domain private key
+  shell: "openssl genrsa 4096 > {{letsencrypt_fqdn[0]}}.key"
+  args:
+    chdir: "{{key_dir}}"
+    creates: "{{letsencrypt_fqdn[0]}}.key"
+
+- name: Create a CSR for single domain
+  shell: "openssl req -new -sha256 -key {{letsencrypt_fqdn[0]}}.key -subj /CN={{letsencrypt_fqdn[0]}} > {{letsencrypt_fqdn[0]}}.csr"
+  args:
+    chdir: "{{key_dir}}"
+    creates: "{{letsencrypt_fqdn[0]}}.csr"
+  when: letsencrypt_fqdn | length == 1
+
+- name: Create a CSR for multiple domains - create config
+  template: >
+    src=openssl.j2
+    dest=/tmp/openssl.cnf
+  when: letsencrypt_fqdn | length > 1
+
+- name: Create a CSR for multiple domains - generate csr
+  shell: "openssl req -new -sha256 -key {{letsencrypt_fqdn[0]}}.key -subj \"/\" -reqexts SAN -config /tmp/openssl.cnf > {{letsencrypt_fqdn[0]}}.csr"
+  args:
+    chdir: "{{key_dir}}"
+    creates: "{{letsencrypt_fqdn[0]}}.csr"
+
+  when: letsencrypt_fqdn | length > 1
+
+
+- name: Install nginx packages
+  apt: name=nginx state=present
+
+- name: Remove default nginx page
+  file: dest=/etc/nginx/sites-enabled/default state=absent
+
+- name: Make nginx host challenge files - Create Directory
+  file: >
+    path={{challenges_path}}
+    state=directory
+    mode=0755
+    owner={{acme_user}}
+    group={{acme_group}}
+
+
+- name: Make nginx host challenge files - Create Config
+  template:
+    src: nginx.j2
+    dest: /etc/nginx/sites-available/{{letsencrypt_fqdn[0]}}_acme.cfg
+    owner: www-data
+    group: www-data
+
+- name: Make nginx host challenge files - Enable Config
+  file:
+    src: /etc/nginx/sites-available/{{letsencrypt_fqdn[0]}}_acme.cfg
+    dest: /etc/nginx/sites-enabled/{{letsencrypt_fqdn[0]}}_acme.cfg
+    state: link
+
+- name: Restart Nginx
+  service: name=nginx state=reloaded
+
+- name: Creates /opt/bin directory
+  file: path=/opt/bin state=directory
+
+- name: Copy renew script
+  template: >
+    src=renew.j2
+    dest=/opt/bin/acme_renew
+
+- name: Make renew script executable
+  file: dest=/opt/bin/acme_renew mode=a+x
+
+- name: Request certificate
+  shell: "/opt/bin/acme_renew"
+  creates: "{{key_dir}}/{{letsencrypt_fqdn[0]}}.pem"
+
+- name: Add cronjob every month
+  cron:
+    name: "Renew acme cert"
+    day: "1"
+    job: "/opt/bin/acme_renew"

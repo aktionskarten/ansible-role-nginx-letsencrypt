@@ -1,0 +1,10 @@
+---
+# defaults file for letsencrypt
+
+acme_tiny_path: /opt/acme-tiny
+acme_tiny_sha: ad7802f1c47e5c31a8e7dfedb3577e6c7d04844a
+acme_user: letsencrypt
+acme_group: www-data
+
+key_dir: /etc/ssl/letsencrypt
+challenges_path: /var/www/challenges

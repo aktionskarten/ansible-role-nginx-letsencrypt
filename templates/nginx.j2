@@ -1,0 +1,9 @@
+server {
+    listen 80;
+    server_name {{letsencrypt_fqdn | join(' ')}};
+
+    location /.well-known/acme-challenge/ {
+        alias {{challenges_path}}/;
+        try_files $uri =404;
+    }
+}
